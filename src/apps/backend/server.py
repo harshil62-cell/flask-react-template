@@ -13,7 +13,7 @@ from modules.authentication.rest_api.authentication_rest_api_server import Authe
 from modules.config.config_service import ConfigService
 from modules.logger.logger import Logger
 from modules.logger.logger_manager import LoggerManager
-from modules.task.rest_api.task_rest_api_server import TaskRestApiServer
+from modules.task.rest_api.task_rest_api_server import task_blueprint
 from scripts.bootstrap_app import BootstrapApp
 
 load_dotenv()
@@ -27,16 +27,8 @@ LoggerManager.mount_logger()
 # Run bootstrap tasks
 BootstrapApp().run()
 
-# Connect to Temporal Server
-try:
-    ApplicationService.connect_temporal_server()
+# skipping temporal connection as its not required for CRUD 
 
-    # Start the health check worker
-    # In production, it is optional to run this worker
-    ApplicationService.schedule_worker_as_cron(cls=HealthCheckWorker, cron_schedule="*/10 * * * *")
-
-except WorkerClientConnectionError as e:
-    Logger.critical(message=e.message)
 
 
 # Apply ProxyFix to interpret `X-Forwarded` headers if enabled in configuration
@@ -55,16 +47,24 @@ account_blueprint = AccountRestApiServer.create()
 api_blueprint.register_blueprint(account_blueprint)
 
 # Register task apis
-task_blueprint = TaskRestApiServer.create()
 api_blueprint.register_blueprint(task_blueprint)
-
 app.register_blueprint(api_blueprint)
 
-# Register frontend elements
-app.register_blueprint(img_assets_blueprint)
-app.register_blueprint(react_blueprint)
+# # Register frontend elements
+# app.register_blueprint(img_assets_blueprint)
+# app.register_blueprint(react_blueprint)
+
+@app.route("/")
+def index():
+    print("root route accessed")
+    return jsonify({"message": "Backend is running!"})
+
+
 
 
 @app.errorhandler(AppError)
 def handle_error(exc: AppError) -> ResponseReturnValue:
     return jsonify({"message": exc.message, "code": exc.code}), exc.http_code or 500
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
