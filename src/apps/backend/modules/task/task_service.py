@@ -1,34 +1,55 @@
-from modules.application.common.types import PaginationResult
-from modules.task.internal.task_reader import TaskReader
-from modules.task.internal.task_writer import TaskWriter
-from modules.task.types import (
-    CreateTaskParams,
-    DeleteTaskParams,
-    GetPaginatedTasksParams,
-    GetTaskParams,
-    Task,
-    TaskDeletionResult,
-    UpdateTaskParams,
-)
+from modules.db.mongo_client import db
+from bson.objectid import ObjectId
 
+tasks_collection = db.tasks
 
 class TaskService:
     @staticmethod
-    def create_task(*, params: CreateTaskParams) -> Task:
-        return TaskWriter.create_task(params=params)
+    def create_task(data):
+        result = tasks_collection.insert_one(data)
+        return str(result.inserted_id)
 
     @staticmethod
-    def get_task(*, params: GetTaskParams) -> Task:
-        return TaskReader.get_task(params=params)
+    def get_all_tasks():
+        return [{**task, "_id": str(task["_id"])} for task in tasks_collection.find()]
 
     @staticmethod
-    def get_paginated_tasks(*, params: GetPaginatedTasksParams) -> PaginationResult[Task]:
-        return TaskReader.get_paginated_tasks(params=params)
+    def update_task(task_id, data):
+        result = tasks_collection.update_one(
+            {"_id": ObjectId(task_id)}, {"$set": data}
+        )
+        return result.modified_count
 
     @staticmethod
-    def update_task(*, params: UpdateTaskParams) -> Task:
-        return TaskWriter.update_task(params=params)
+    def delete_task(task_id):
+        result = tasks_collection.delete_one({"_id": ObjectId(task_id)})
+        return result.deleted_count
+    
+    @staticmethod
+    def add_comment(task_id, comment):
+        task = tasks_collection.find_one({"_id": ObjectId(task_id)})
+        if not task:
+            return False
+        comment["id"] = len(task.get("comments", [])) + 1
+        tasks_collection.update_one(
+            {"_id": ObjectId(task_id)},
+            {"$push": {"comments": comment}}
+        )
+        return True
 
     @staticmethod
-    def delete_task(*, params: DeleteTaskParams) -> TaskDeletionResult:
-        return TaskWriter.delete_task(params=params)
+    def update_comment(task_id, comment_id, new_data):
+        result = tasks_collection.update_one(
+            {"_id": ObjectId(task_id), "comments.id": comment_id},
+            {"$set": {"comments.$.text": new_data.get("text", ""),
+                      "comments.$.author": new_data.get("author", "")}}
+        )
+        return result.modified_count > 0
+
+    @staticmethod
+    def delete_comment(task_id, comment_id):
+        result = tasks_collection.update_one(
+            {"_id": ObjectId(task_id)},
+            {"$pull": {"comments": {"id": comment_id}}}
+        )
+        return result.modified_count > 0
